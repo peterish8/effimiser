@@ -4,6 +4,7 @@ members = [
     "crates/ctx-core",
     "crates/ctx-store",
     "crates/ctx-cli",
+    "crates/ctx-bench",
 ]
 
 [workspace.package]

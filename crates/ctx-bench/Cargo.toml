@@ -1,0 +1,18 @@
+[package]
+name = "ctx-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ctx-bench"
+path = "src/main.rs"
+
+[dependencies]
+ctx-core = { path = "../ctx-core" }
+ctx-store = { path = "../ctx-store" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile = "3"

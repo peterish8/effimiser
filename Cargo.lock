@@ -214,6 +214,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctx-bench"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctx-core",
+ "ctx-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ctx-cli"
 version = "0.0.1"
 dependencies = [
