@@ -1,0 +1,21 @@
+Context Runtime
+Copyright 2026 Context Runtime contributors
+
+Licensed under the Apache License, Version 2.0 (the "License").
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+
+Third-party code reused in this project: NONE.
+
+This project studied a number of open-source reference implementations and
+borrowed architectural ideas from them. Architectural ideas and observable
+behaviour are not copyrightable; specific source expression is. No source code,
+comments, test fixtures or data files from any reference project have been
+copied into this codebase.
+
+See docs/research/LICENSE_MATRIX.md for the per-project compliance record,
+including four projects from which code reuse is blocked outright.
+
+If and when third-party source is genuinely reused, its copyright notice and
+license must be added to this file in the same commit.

@@ -1,0 +1,9 @@
+/target
+**/*.rs.bk
+.ctx/
+benchmarks/results/**/raw/
+*.profraw
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+/loop prompt.txt
