@@ -14,7 +14,7 @@ optimise, verify, commit, move on.
 |---|---|---|
 | 0 | Reference research, license matrix, feature matrix | **done** |
 | 1 | Rust CLI, SQLite + raw store, token accounting | **done** |
-| 2 | Benchmark harness + vanilla baselines | next |
+| 2 | Benchmark harness + vanilla baselines | **partial** — see below |
 | 3 | Incremental tree-sitter index, symbols, lexical search | planned |
 | 4 | Context packet compiler + budgeted ranking | planned |
 | 5 | Smart reads, hash snapshots, delta reads | planned |
@@ -27,6 +27,14 @@ optimise, verify, commit, move on.
 | 12 | Optional embeddings and reranking | planned |
 | 13 | Provider prompt-cache adapters | planned |
 | 14 | Full benchmarks, profiling, security review | planned |
+
+Phase 2 is split and only half of it is done. The **deterministic**
+half — microbenchmark harness, JSONL schema, negative control, and the
+token/store measurements — is built and has produced artifacts. The
+**agent-level** half — vanilla baselines for suites A (navigation),
+B (large files) and C (terminal output) — has not run, because those need a
+model in the loop and there is not yet anything to compare against. Phase 3
+is the real next move.
 
 ## Phase 0 — Research `done`
 
