@@ -91,6 +91,27 @@ recorded. A size win with a recall loss is rejected. If the compiler does not
 beat plain symbol lookup often enough to justify its complexity, that finding
 is published in FAILED_EXPERIMENTS.md and the design is cut back.
 
+## Phase 10 note — borrowed design, 2026-09-13
+
+TencentDB-Agent-Memory was evaluated and rejected as a dependency
+([evaluation](research/TENCENTDB_AGENT_MEMORY.md)) — it requires an LLM
+summarisation service and vector search, which target #12 forbids. Two of its
+design ideas are adopted for Phase 10 regardless:
+
+1. **Layer memory, and layer its retrieval.** L0 raw (provenance) → L1 atomic
+   facts (precise recall) → L2 scenario blocks (fast context restore) →
+   L3 stable profile (cold start). Serve the high layers by default and fall
+   back to L0/L1 only when a specific fact is needed. We extract facts
+   deterministically rather than by LLM summarisation, which keeps the offline
+   constraint intact.
+2. **Governance is part of the data model, not a feature.** Owner, version,
+   status and visibility on every memory item. "Which version of this decision
+   is current" is the question that makes stale memory actively harmful, and it
+   has to be answerable from the record itself.
+
+If Phase 10 ships, evaluate it against **PersonaMem** — an external published
+benchmark is worth more than one we designed ourselves.
+
 ## Phase 5 — Smart and delta reads
 
 Unchanged re-read returns a marker; changed file returns a diff against the

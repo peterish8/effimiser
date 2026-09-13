@@ -11,3 +11,4 @@ benchmarks/results/**/raw/
 # Orchestration scratch: tickets and worker verdicts are committed as evidence,
 # but raw worker transcripts are not.
 .orchestration/**/*.log
+.gstack/

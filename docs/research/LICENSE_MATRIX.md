@@ -23,6 +23,7 @@ Compliance record for Context Runtime (Apache-2.0). Reference repos live under `
 | caveman | AMBIGUOUS (MIT + BSL) | LICENSE (MIT); LICENSE.BSL | Unclear | No — resolve ambiguity first | N/A until resolved | blocker |
 | claude-context | MIT | package.json | Yes | Yes | Yes (retain MIT notice) | low |
 | claude-token-optimizer | MIT | LICENSE | Yes | Yes | Yes (retain MIT notice) | none |
+| TencentDB-Agent-Memory | MIT | LICENSE; README footer "MIT (c) TencentDB Agent Memory Team" | Yes | Yes | Yes (retain MIT notice) | none — but see note below |
 
 ## Compatibility rules we follow
 
@@ -73,3 +74,16 @@ As of this document we reuse none of the reference repos' code.
 - This document is engineering analysis, not legal advice. A human should confirm the classifications above before shipping any reused third-party code.
 
 Last verified: 2026-09-12. This is engineering analysis, not legal advice.
+
+## Note on TencentDB-Agent-Memory
+
+Evaluated 2026-09-13, after the original 17. License is clean MIT and poses no
+reuse problem. It is listed here for completeness, not because we plan to
+absorb code: the evaluation in
+[TENCENTDB_AGENT_MEMORY.md](TENCENTDB_AGENT_MEMORY.md) recommends against
+adopting it, on architectural grounds rather than legal ones.
+
+One transitive caution if that decision is ever revisited: its README credits
+an upstream `CodeGraph` project for the CodeGraph module and Nous Research's
+Hermes Agent for part of the Skill module. Reusing those subtrees would mean
+clearing *their* licenses too, not just this repository's.
