@@ -1,0 +1,11 @@
+VERDICT: SOUND
+
+COUNTEREXAMPLE: none found
+
+REASONING: Letter branches exclude `\r`/`\n`; numeric branches cannot cross them. The punctuation branch can cross the newline only through `[\r\n/]*` (o200k) or `[\r\n]*` (cl100k), so non-whitespace non-`/` after the newline terminates it. Whitespace branches also stop at the boundary; chunk-local `$` or `(?!\S)` may select a different branch, but the matched whitespace run is identical because the boundary follows `\n`. BPE is per regex piece: direct encoder-map hits and `byte_pair_encode` (including one-byte pieces) cannot merge across pieces. Combining marks after `\n` are safely skipped by the ASCII restriction. A CRLF interior split is impossible because the rule requires the preceding byte to be `\n`.
+
+The ASCII restriction is conservative, not load-bearing for non-ASCII non-whitespace characters; it is necessary if Unicode whitespace is also admitted. No additional byte besides `/` needs exclusion: `\r`, `\n`, and ASCII whitespace are already rejected.
+
+TEST_BLIND_SPOTS: The tests compare token counts, not token sequences; accidental equal counts could hide changed tokenization. The adversarial cases omit combining marks and exhaustive Unicode whitespace/punctuation combinations. Repository coverage is finite, scans only `.rs`/`.toml`, and exercises `cl100k_base` only through serial helper calls; the large production-path test covers only o200k. Also, the workspace’s tiktoken-rs 0.6.0 source uses an older cl100k regex spelling without the stated possessive/end-anchored branch, so the supplied regex variant is not directly integration-tested.
+
+CONFIDENCE: high; exhaustive generated differential testing against both exact runtime regexes and token sequences would raise it further.

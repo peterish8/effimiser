@@ -48,3 +48,70 @@ eagerly-loaded tool and skill catalogue consumed a gigabyte of memory and ten
 thousand tokens before any work began. It is direct evidence for the MCP
 schema-virtualisation design in architecture-v0.md §3.8 — and a caution that
 the virtualisation layer must itself stay cheap at startup.
+
+---
+
+## 003 — Sequential A/B benchmark arms
+
+**Date:** 2026-09-13
+**Hypothesis:** Measuring a baseline arm to completion, then the treatment arm,
+is good enough for a deterministic microbenchmark in a single process.
+
+**Measured:** It is not. Single-threaded 10 MiB token counting recorded
+**1,668 ms** on its first execution in the process and a **sustained 3,457 ms**
+across the ten iterations that followed — a 2x degradation with a *tight*
+p95/p50 of 1.1, so a systematic shift rather than a transient spike. The
+degradation landed entirely on whichever arm ran first, which was the baseline.
+
+The resulting speedups were:
+
+| input | sequential arms | interleaved arms |
+|---|---|---|
+| 1 MiB | 5.93x | 4.12x |
+| 10 MiB | 3.84x | 4.21x |
+| 40 MiB | 1.76x | 5.06x |
+
+**Result:** The sequential numbers are not merely noisy, they are *shaped
+wrong*: the apparent speedup fell as the input grew, which is backwards for a
+parallel decomposition across a fixed worker count. That inversion was the tell
+that the measurement, not the code, was broken. Had the benchmark reported only
+the 1 MiB case, it would have published 5.93x for a change whose honest figure
+is around 4x.
+
+**Decision:** Rejected. `Runner::measure_interleaved` alternates A, B, A, B and
+swaps which arm leads on each round. All A/B comparisons use it, and results
+carry an `interleaved` note so they are never compared against
+sequentially-measured ones.
+
+**Root cause, unresolved:** the underlying 2x degradation is not explained. It
+is reproducible and correlates with repeated allocation of a multi-megabyte
+`Vec<u32>` on Windows. Interleaving neutralises its effect on the *ratio*, but
+the absolute serial numbers should not be treated as this machine's best case.
+Recorded as an open question rather than a solved one.
+
+---
+
+## 004 — Antigravity headless dispatch for a build-and-test ticket
+
+**Date:** 2026-09-13
+**Hypothesis:** `agy -p ... --sandbox --mode accept-edits` can run a bounded
+implementation ticket that requires `cargo build` and `cargo test`.
+
+**Measured:** Returned `"status": "SUCCESS"` with an **empty response**, one
+turn, 34,220 tokens, and `"denied_actions": [{"action": "command"}]`. The
+worktree was untouched. stderr explained it: a tool required the `command`
+permission, which headless mode cannot prompt for, so it was auto-denied.
+
+**Result:** The ticket never ran. Note that the exit code was 0 and the status
+field said SUCCESS — a worker self-report that would have been entirely wrong to
+trust. The only evidence that nothing happened was `denied_actions` and an
+unchanged worktree.
+
+**Decision:** For tickets needing command execution, either grant a scoped
+`permissions.allow` rule in agy's settings first, or route to a runtime whose
+sandbox already permits scoped writes. `--dangerously-skip-permissions` is not
+an acceptable workaround. This ticket was rerouted to `codex exec -s
+workspace-write`.
+
+**Worth recording generally:** always inspect `denied_actions` and the actual
+diff. Exit code zero does not prove the requested work ran.

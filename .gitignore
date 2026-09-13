@@ -7,3 +7,7 @@ benchmarks/results/**/raw/
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 /loop prompt.txt
+
+# Orchestration scratch: tickets and worker verdicts are committed as evidence,
+# but raw worker transcripts are not.
+.orchestration/**/*.log
