@@ -218,12 +218,16 @@ name = "ctx-bench"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "ctx-core",
  "ctx-store",
+ "fancy-regex",
+ "rustc-hash",
  "serde",
  "serde_json",
  "tempfile",
+ "tiktoken-rs",
 ]
 
 [[package]]

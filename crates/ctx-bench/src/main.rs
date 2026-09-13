@@ -98,15 +98,68 @@ fn main() -> Result<()> {
     );
 
     let counter = TokenCounter::default_counter()?;
-    for size in [1_024usize, 102_400, 1_048_576] {
+
+    // Serial and parallel arms are measured at every size, including the sizes
+    // where parallelism is expected to lose. Reporting only the sizes where it
+    // wins would be cherry-picking.
+    let sizes: Vec<usize> = if cli.quick {
+        vec![1_024, 102_400, 1_048_576]
+    } else {
+        vec![1_024, 102_400, 1_048_576, 10 * 1_048_576, 40 * 1_048_576]
+    };
+    for size in sizes {
         let text = synthetic_text(size);
-        runner.measure(
+        // Large inputs are slow single-threaded; scale iterations down so the
+        // suite stays runnable on every commit. n is recorded in the artifact.
+        let iters = match size {
+            s if s > 10_485_760 => cli.iters.min(5),
+            s if s > 1_048_576 => cli.iters.min(10),
+            _ => cli.iters,
+        };
+
+        runner.measure_interleaved(
+            &format!("tokens.count_serial_{}", human(size)),
             &format!("tokens.count_{}", human(size)),
-            "count tokens in synthetic source-like text",
-            cli.warmup,
-            cli.iters,
+            "count tokens on one thread (baseline arm, the pre-iteration-3 behaviour)",
+            "count tokens via the public API, which splits large inputs across threads",
+            cli.warmup.min(3),
+            iters,
             Some(size as u64),
-            None,
+            || {
+                std::hint::black_box(counter.count_serial(&text));
+            },
+            || {
+                std::hint::black_box(counter.count(&text));
+            },
+        );
+
+        // Equality is a test invariant, but assert it here too: a benchmark
+        // that measured a wrong answer faster would be worthless.
+        assert_eq!(
+            counter.count(&text).tokens,
+            counter.count_serial(&text).tokens,
+            "parallel and serial counts diverged at {size} bytes"
+        );
+    }
+
+    // Worst case for the split rule: a large input with no safe boundary, such
+    // as a minified bundle. The parallel path must fall back to serial, so this
+    // pair should show no speedup. Recorded so the limitation is visible in the
+    // artifact rather than only in prose.
+    {
+        let size = 4 * 1_048_576;
+        let text = "minified,".repeat(size / 9);
+        runner.measure_interleaved(
+            "tokens.count_serial_4mib_noboundary",
+            "tokens.count_4mib_noboundary",
+            "count tokens on one thread, input has no newline",
+            "count tokens via the public API, input has no newline: the split rule              finds no boundary, so this must fall back to serial and should show              no speedup, only the cost of the failed boundary scan",
+            1,
+            cli.iters.min(8),
+            Some(text.len() as u64),
+            || {
+                std::hint::black_box(counter.count_serial(&text));
+            },
             || {
                 std::hint::black_box(counter.count(&text));
             },
