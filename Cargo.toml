@@ -12,7 +12,7 @@ members = [
 version = "0.0.1"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nithy/effimiser"
+repository = "https://github.com/peterish8/effimiser"
 rust-version = "1.80"
 
 [workspace.dependencies]

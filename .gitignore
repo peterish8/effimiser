@@ -12,3 +12,6 @@ benchmarks/results/**/raw/
 # but raw worker transcripts are not.
 .orchestration/**/*.log
 .gstack/
+
+# Local Claude Code session state, not project content.
+.claude/
