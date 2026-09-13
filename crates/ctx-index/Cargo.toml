@@ -1,0 +1,19 @@
+[package]
+name = "ctx-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ctx-core = { path = "../ctx-core" }
+anyhow.workspace = true
+rusqlite.workspace = true
+blake3.workspace = true
+ignore.workspace = true
+serde.workspace = true
+tracing.workspace = true
+tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+
+[dev-dependencies]
+tempfile = "3"

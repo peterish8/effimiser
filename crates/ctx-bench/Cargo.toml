@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 ctx-core = { path = "../ctx-core" }
 ctx-store = { path = "../ctx-store" }
+ctx-index = { path = "../ctx-index" }
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
