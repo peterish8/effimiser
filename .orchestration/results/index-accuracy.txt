@@ -1,0 +1,39 @@
+I'll inspect the index walker, the benchmark agreement check, and each reported miss site without changing any files.Next I’ll open each reported miss with surrounding context and compare it against the node kinds `walk()` actually indexes.Gamma/Epsilon look like string-fixture hits; I’ll confirm the remaining associated-type and Swift/Go string contexts next.CLASSIFICATIONS:
+`crates/ctx-index/src/lib.rs:319` Gamma -> A - `enum Gamma` sits in the `write(...)` string fixture of `finds_definitions_of_each_kind`, not a real item in this file.
+`crates/ctx-index/src/lib.rs:321` Epsilon -> A - `type Epsilon = u32` is the next line of that same string fixture.
+`crates/language/src/lib.rs:159` ALIAS -> B - `const ALIAS` is a real associated-const template inside `macro_rules! impl_alias`; tree-sitter leaves the body as a token tree, so `walk()` never sees a `const_item` (the trait associated const at line 151 *is* indexed).
+`crates/core/src/source.rs:148` Underlying -> B - `type Underlying: Clone + PartialEq` is a trait associated type (`associated_type`); walker only matches `type_item`.
+`crates/outline/tests/typescript_outline_rules.rs:58` readonly -> A - TypeScript `static readonly id` inside an `r#"` fixture; rg’s `static <name>` arm treats the keyword `readonly` as a definition.
+`crates/outline/tests/jvm_swift_outline_rules.rs:165` Protocol -> A - Java `enum Protocol { HTTP_1_1 }` inside an `r#"` outline-fixture string.
+`lsp-daemon/src/indexing/manager.rs:5349` MathOp -> A - `pub trait MathOp` is inside `rust_code1 = r#"..."#` written to a temp file.
+`lsp-daemon/src/indexing/manager.rs:5550` MathOp -> A - same pattern: `pub trait MathOp` inside a second raw-string fixture.
+`tests/go_outline_format_tests.rs:31` CalculatorInterface -> A - Go `type CalculatorInterface interface` inside `content = r#"..."#`.
+`tests/swift_outline_format_tests.rs:2639` AsyncDataIterator -> A - Swift `struct AsyncDataIterator` inside the `r#"` opened at line 2193.
+`tests/swift_outline_format_tests.rs:3190` ComplexDataStructure -> A - Swift `struct ComplexDataStructure` inside the `r#"` opened at line 2797.
+
+TALLY: A=9 B=2 C=0 D=0
+
+Q1_MISSING_NODE_KINDS:
+`walk()` matches: `function_item`, `function_signature_item`, `struct_item`, `enum_item`, `trait_item`, `union_item`, `type_item`, `const_item`, `static_item`, `mod_item`, `macro_definition`. It descends everywhere and uses `impl_item` / `trait_item` / `mod_item` only as containers.
+
+Therefore **not** indexed:
+- `associated_type` (trait associated types) — confirmed miss
+- items inside `macro_definition` / `macro_invocation` token trees (no structured child nodes)
+- `impl_item` itself (`SymbolKind::Impl` exists, never emitted)
+- `enum_variant`
+- `field_declaration`
+- `foreign_mod_item` (the extern block; inner `function_signature_item`s still get walked)
+- `use_declaration` / `use_as_clause` re-exports
+- `extern_crate_declaration`
+- generic params (`type_parameter`, `const_parameter`, `lifetime_parameter`)
+- `let_declaration` / other locals
+
+Not missing (despite the names): trait method signatures (`function_signature_item`) and associated consts (`const_item`).
+
+Q2_METRIC_FLAWED: YES
+Exact `(path, line)` set equality: a line-offset on the same definition (index on the item node including attributes vs rg on the `fn`/`struct` line) makes `rg_set` not a subset of `idx_set` and is counted as `index_missed_a_site`. Grounding rg as truth also counts string/comment hits as misses (9/11 examples).
+
+`rg_sites` Windows parse: `splitn(3, ':')` then rejoin drive letter only if `parts[0].len()==1 && parts[1].starts_with('\\')`. That works for `C:\foo.rs:319:...`. It **drops** the line when the path after the drive uses `/` (`C:/foo.rs:...` → `parts[1]` is not a line number). `strip_prefix` failure would also leave an absolute path vs the index’s relative `/`-normalized path, so the sets disagree even when both found the site.
+
+MOST_IMPORTANT_FIX:
+Match `associated_type` in `walk()` (same name/`type` kind as `type_item`). That is the only sampled miss that is a real Rust definition outside a macro token tree.

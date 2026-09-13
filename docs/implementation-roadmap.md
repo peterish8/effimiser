@@ -15,7 +15,7 @@ optimise, verify, commit, move on.
 | 0 | Reference research, license matrix, feature matrix | **done** |
 | 1 | Rust CLI, SQLite + raw store, token accounting | **done** |
 | 2 | Benchmark harness + vanilla baselines | **partial** — see below |
-| 3 | Incremental tree-sitter index, symbols, lexical search | planned |
+| 3 | Incremental tree-sitter index, symbols, lexical search | **partial** — Rust symbols done and measured; imports/refs/tests not |
 | 4 | Context packet compiler + budgeted ranking | planned |
 | 5 | Smart reads, hash snapshots, delta reads | planned |
 | 6 | Shell capture, per-command parsers, raw querying | planned |

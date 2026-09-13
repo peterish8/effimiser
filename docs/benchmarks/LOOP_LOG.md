@@ -334,3 +334,135 @@ exist anywhere in this project:
 
 Report scaling behaviour honestly if the target is not met at the largest size
 rather than quietly reporting only the small repository.
+
+---
+
+## Iteration 5 — 2026-09-13 — Phase 3 symbol index
+
+Commits: `6579981` (index + benchmark), plus the accuracy fix recorded below.
+
+Artifacts: `benchmarks/results/symbols-phase3.jsonl`
+
+### What we set out to do
+
+The decisive question for Phase 3, asked before building anything on top of it:
+**is an index actually better than ripgrep at "where is X defined"?** If not,
+the index is not worth its complexity, and finding that out now is far cheaper
+than finding it out after phases 4-11 depend on it.
+
+Baseline first. The vanilla arm is not `rg <name>` — that would be a strawman
+the anti-gaming rules forbid. It is the definition-shaped, line-anchored
+pattern a competent agent would actually write, with process spawn included
+because an agent really pays it.
+
+### What improved
+
+Interleaved A/B, warm p50, 40 sampled symbols x 3 reps per tier:
+
+| tier | repo | lines | ripgrep p50 | index p50 | speedup | tokens |
+|---|---|---|---|---|---|---|
+| small | Effimiser | 4,045 | 135.17 ms | **0.04 ms** | x3,257 | 32 -> 16 |
+| medium | ast-grep | 44,189 | 161.26 ms | **0.04 ms** | x3,785 | 38 -> 17 |
+| large | probe | 264,298 | 186.34 ms | **0.04 ms** | x4,943 | 33 -> 16 |
+
+**Target 3 is met**: p50 <50 ms and p95 <150 ms were the goals; measured p50 is
+0.04 ms and p95 is 0.05-0.06 ms, and it does not degrade as the repository
+grows from 4k to 264k lines.
+
+**Target 5 is met**: a no-op reindex reparses **0 files** at every tier, on
+real repositories rather than a fixture. The benchmark asserts it rather than
+printing it, so the run fails if incrementality ever breaks.
+
+### What became worse
+
+- **Index build is a new cost that did not exist before**, and it is reported
+  rather than excluded: 189 ms / 336 ms / 1,848 ms cold for 16 / 155 / 400
+  files, producing 132 KiB / 607 KiB / 1,315 KiB of database. A no-op reindex
+  still costs 42-172 ms because every file is hashed; that is the price of
+  being sure, and an mtime pre-check could cut it later.
+- **A new dependency tree**: tree-sitter plus tree-sitter-rust, and a C
+  toolchain to build them.
+- Rust only. Everything here is a Rust-shaped claim.
+
+### Two things the headline number hides
+
+**1. Half the baseline is process spawn, not searching.** Measured on this
+machine, `rg --version` — no search at all — costs p50 76-116 ms. Latency also
+barely moved between a 4k-line and a 264k-line repository, which can only be
+true if a fixed cost dominates. So a large part of the index's advantage is
+that *it is already running and ripgrep is not*: a deployment-model advantage
+as much as a data-structure one. An agent holding a warm ripgrep daemon would
+claw back much of it. The spawn floor is recorded as a numeric field in the
+artifact, not merely as prose, so this cannot quietly disappear from a later
+retelling.
+
+**2. The token win is small, and the original hypothesis was wrong.** The
+index returns ~16 tokens against ripgrep's ~33 — about 2x. That is real but
+minor, and it refutes the intuition the project started with. A
+definition-shaped ripgrep pattern is *already precise*: 1 match at p50, 1-2 at
+p95. There is no wall of grep output to save the model from on this task. **The
+case for a symbol index is latency, not context savings.** Any future claim
+that the index saves significant context on definition lookup is contradicted
+by this artifact.
+
+### The accuracy finding, which inverted itself
+
+The agreement check compares the (file, line) sets each arm returns. It first
+reported the index *missing* sites ripgrep found — 4/40 on ast-grep, 7/40 on
+probe. Taken at face value that reads as an index defect.
+
+Manual inspection plus an independent read-only review (Grok, grok-4.6)
+attributed all eleven:
+
+- **9 of 11 were ripgrep false positives.** The pattern matched Swift, Go,
+  Java and TypeScript source sitting inside Rust *raw-string test fixtures*
+  (`r#"..."#`), plus two hits inside this repository's own test fixture
+  strings. None are Rust definitions. The index is right to skip them.
+- **2 were genuine gaps.** `type Underlying: Clone;` inside a trait is an
+  `associated_type` node, not a `type_item`, and the walker skipped it —
+  fixed, with a test that fails without the fix. And `const ALIAS` inside a
+  `macro_rules!` body, which tree-sitter leaves as an opaque token tree; that
+  one is a documented limitation, now pinned by a test so it is a decision on
+  record rather than a surprise.
+
+**On this sample the index is the more precise of the two tools, not the less.**
+The metric had been written with ripgrep as ground truth, which inverted the
+conclusion; the field is renamed `rg_only_sites` and carries the attribution.
+
+### What remains bottlenecked
+
+- The agreement metric compares exact `(path, line)` pairs, so a line-number
+  offset on the same definition would still be miscounted. Review also flagged
+  that `rg_sites` can mis-parse a `C:/`-style absolute path. Neither bit this
+  run, both are latent.
+- No reference resolution. The index answers "which definitions carry this
+  name", not "which definition does this call site mean". Two same-named
+  symbols return two rows, by design.
+- Rust only; no imports, exports, references, or source-to-test relationships
+  yet. Phase 3's full scope is not done — the decisive measurement is.
+
+### What we learned
+
+1. **The measurement refuted the motivation.** Phase 3 was justified partly by
+   context savings; it delivered ~2x tokens and ~4,000x latency. Building it
+   without the ripgrep baseline would have left us claiming the wrong benefit.
+2. **A disagreement metric needs its ground truth interrogated.** Reported
+   naively, this benchmark would have said "the index misses 11 definitions"
+   when the truth is closer to "ripgrep reports 9 things that are not
+   definitions".
+3. **Benchmarking found a real bug that reading the grammar did not.** The
+   `associated_type` gap surfaced because a real repository disagreed with us.
+
+### Next highest-value experiment
+
+The index answers definition lookup well. The next thing that is *unmeasured
+and load-bearing* is Phase 4, the context packet compiler — and its honest
+test is not packet size:
+
+> Assemble a context packet for a real task and record **precision, recall,
+> fallback rate and packet size together**. A packet that is small because it
+> omitted the file that mattered is a failure, not a win.
+
+Given what this iteration found about token savings, approach it expecting the
+compiler's value to be *evidence quality*, not byte reduction, and design the
+measurement so a recall loss cannot hide behind a size win.

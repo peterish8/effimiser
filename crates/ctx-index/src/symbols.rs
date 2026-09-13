@@ -103,7 +103,10 @@ fn walk(node: Node, src: &[u8], container: Option<&str>, out: &mut Vec<Symbol>) 
         "enum_item" => Some(SymbolKind::Enum),
         "trait_item" => Some(SymbolKind::Trait),
         "union_item" => Some(SymbolKind::Union),
-        "type_item" => Some(SymbolKind::TypeAlias),
+        // `type Foo = u32;` at item level, and `type Foo: Bound;` inside a
+        // trait, are different node kinds. Missing the second one was found by
+        // benchmarking against ripgrep, not by reading the grammar.
+        "type_item" | "associated_type" => Some(SymbolKind::TypeAlias),
         "const_item" => Some(SymbolKind::Const),
         "static_item" => Some(SymbolKind::Static),
         "mod_item" => Some(SymbolKind::Module),
@@ -204,6 +207,45 @@ mod tests {
         );
         let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, vec!["real"], "only definitions, got {names:?}");
+    }
+
+    #[test]
+    fn finds_associated_types_in_traits_and_impls() {
+        // Found by benchmarking against ripgrep: `type Underlying: Clone;`
+        // inside a trait is an `associated_type` node, not a `type_item`, and
+        // the walker was skipping it. Real definitions, genuinely missed.
+        let syms = extract(
+            "pub trait Content {\n  type Underlying: Clone;\n  const LIMIT: usize = 4;\n  fn get(&self) -> u32;\n}\n",
+        );
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Underlying"), "associated type missing: {names:?}");
+        assert!(names.contains(&"LIMIT"), "associated const missing: {names:?}");
+        assert!(names.contains(&"get"), "trait method missing: {names:?}");
+
+        let assoc = syms.iter().find(|s| s.name == "Underlying").unwrap();
+        assert_eq!(assoc.kind, SymbolKind::TypeAlias);
+        assert_eq!(
+            assoc.container.as_deref(),
+            Some("Content"),
+            "an associated type belongs to its trait"
+        );
+    }
+
+    #[test]
+    fn items_inside_macro_bodies_are_not_indexed() {
+        // A documented limitation rather than a bug: tree-sitter parses a
+        // macro_rules body as an opaque token tree, so items that only exist
+        // after expansion are invisible here. Pinned so the behaviour is a
+        // decision on record, not a surprise.
+        let syms = extract(
+            "macro_rules! impl_alias {\n  ($l:ident) => {\n    impl Alias for $l {\n      const ALIAS: u8 = 1;\n    }\n  };\n}\n",
+        );
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"impl_alias"), "the macro itself should be found");
+        assert!(
+            !names.contains(&"ALIAS"),
+            "items inside a macro body are not definitions until expansion: {names:?}"
+        );
     }
 
     #[test]
