@@ -9,8 +9,17 @@ Not an agent. Not a RAG package. Not a bag of fifty MCP tools.
 
 > **Status: early. Phase 1 of 14.** The foundation is built and tested. The
 > context compiler, code index, MCP gateway and agent integrations are not.
-> This README contains no performance percentages, because no benchmark suite
-> has run yet. See [docs/benchmark-plan.md](docs/benchmark-plan.md) for why that
+>
+> This README contains **no token-savings, tool-call or context-size
+> percentages**, because the suites that would produce them need a model in the
+> loop and have not been run. The deterministic microbenchmarks *have* run —
+> token counting, store I/O, and end-to-end `ctx run` latency — and their raw
+> artifacts are under [`benchmarks/results/`](benchmarks/results/), with the
+> reasoning and the negative results in
+> [LOOP_LOG.md](docs/benchmarks/LOOP_LOG.md) and
+> [FAILED_EXPERIMENTS.md](docs/benchmarks/FAILED_EXPERIMENTS.md). Those measure
+> the plumbing, not the product claim. See
+> [docs/benchmark-plan.md](docs/benchmark-plan.md) for why that distinction
 > matters here.
 
 ## The idea
@@ -41,10 +50,17 @@ compression does not happen.
 | `ctx-core` | working | handles, provenance, token accounting against a real BPE |
 | `ctx-store` | working | SQLite metadata + content-addressed blobs, run capture, file snapshots |
 | `ctx-cli` | working | `ctx init`, `ctx stats`, `ctx run`, `ctx output` |
+| `ctx-bench` | working | deterministic microbenchmarks with interleaved A/B arms |
 
-26 tests, all passing. Verified: captured output recovers byte-identically,
+49 tests, all passing. Verified: captured output recovers byte-identically,
 handles survive process restarts, identical output from two runs stores one
 copy, and an unchanged file is detectable without re-reading it.
+
+Token counting is parallelised across threads at split points where the
+tokenizer provably cannot emit a token spanning the split; the equivalence is
+asserted on full token sequences, not counts, over this repository's own
+sources against both vocabularies, and was validated by planting an unsafe
+split rule and confirming the tests fail.
 
 ## What is not built
 
