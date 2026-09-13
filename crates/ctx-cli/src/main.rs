@@ -128,6 +128,13 @@ fn cmd_run(root: &Path, argv: &[String]) -> Result<()> {
         .split_first()
         .context("run needs at least a program name")?;
 
+    // Load the vocabulary while the child runs, not after it exits.
+    // Construction costs ~250-400 ms (measured; see docs/benchmarks/LOOP_LOG.md)
+    // and needs nothing the child produces, so serialising the two simply adds
+    // that to every captured command. Overlapped, it is free for any command
+    // slower than the load, and no worse than before for anything faster.
+    let counter_load = std::thread::spawn(TokenCounter::default_counter);
+
     let started = std::time::Instant::now();
     // Spawned via Command::args, never through a shell, so arguments cannot be
     // reinterpreted as shell syntax.
@@ -150,7 +157,9 @@ fn cmd_run(root: &Path, argv: &[String]) -> Result<()> {
 
     // What the model would see: a small summary plus a recovery handle. The
     // full bytes stay in the store.
-    let counter = TokenCounter::default_counter()?;
+    let counter = counter_load
+        .join()
+        .map_err(|_| anyhow::anyhow!("the tokenizer loader thread panicked"))??;
     let raw_bytes = out.stdout.len() + out.stderr.len();
     let stdout_text = String::from_utf8_lossy(&out.stdout);
     let raw_tokens = counter.count(&stdout_text).tokens;

@@ -225,3 +225,112 @@ Two candidates, in priority order.
    further work on it has sharply diminishing returns. The next bottleneck is
    Phase 3: there is still no symbol index, so the p50 <50 ms symbol-lookup
    target has never been measured.
+
+---
+
+## Iteration 4 — 2026-09-13 — Hiding vocabulary load behind the subprocess
+
+Commit: see `git log` for `perf: load the vocabulary while the captured command runs`
+
+Artifacts: `benchmarks/results/cli-e2e-overlap.jsonl`,
+script `benchmarks/e2e/ctx-run-ab.sh`
+
+### What we set out to do
+
+Iteration 3 left `TokenCounter::new` as the dominant fixed cost (402.9 ms cold,
+249.0 ms warm p50). The queued plan was to cut it with a counter-only vocabulary
+loader, skipping the decoder map and sorted token table that `CoreBPE::new`
+builds and a counter never reads.
+
+**That plan was not executed, and on inspection it should not be next.** Two
+findings redirected it:
+
+1. **The architecture makes the cost mostly irrelevant.** architecture-v0.md §1
+   describes the runtime as a library plus a binary exposing six tools to an
+   MCP client. An MCP server is long-lived, so vocabulary loading is paid once
+   per *server start*, not per tool call. Optimising it would improve a number
+   that most of the product never pays.
+
+2. **Where the cost *is* paid — the `ctx run` CLI — it was being paid
+   needlessly.** `cmd_run` constructed the counter *after* `Command::output()`
+   returned. Loading the vocabulary needs nothing the child process produces,
+   so the two were serialised for no reason. That is not a slow component; it
+   is a scheduling mistake, and it is fixed in nine lines with no vendored
+   code, no new dependency and no licensing question.
+
+### What improved
+
+`cmd_run` now starts the vocabulary load on a background thread before spawning
+the child and joins it afterwards. End-to-end `ctx run` wall clock, interleaved
+arms, order swapped each round, n=9 per arm:
+
+| child command | before | after | saved |
+|---|---|---|---|
+| `ping -n 2 127.0.0.1` (~1 s) | p50 1,774 ms | p50 **1,366 ms** | 408 ms (−23%) |
+| `cmd /c ver` (~10 ms) | p50 597 ms | p50 **568 ms** | 29 ms (−5%) |
+
+The slow-child saving of 408 ms is consistent with the 250–400 ms construction
+cost being hidden completely, as the mechanism predicts.
+
+### What became worse
+
+Nothing measured. Output is byte-identical: the same command line, byte count,
+token count and tokenizer label, verified by diffing both binaries' output on
+the same command. All 49 tests pass.
+
+### What remains bottlenecked
+
+- **The fast-child case is now floored by construction, and that floor is
+  real.** At p50 568 ms for a ~10 ms command, roughly 250–400 ms of what
+  remains is still vocabulary loading — it can only be hidden to the extent
+  the child gives us something to hide it behind. The saving is bounded by
+  `min(child_duration, construction_time)`. An agent issuing many fast commands
+  through the CLI still pays most of it each time.
+
+  The honest fix for that case is not a faster loader, it is not paying it
+  per-command: the MCP server path loads once. Until the server exists, this
+  remains a known limitation rather than a solved problem.
+
+- **`TokenCounter::new` itself is untouched.** The queued counter-only-loader
+  experiment is still available, and the profile that justifies it is still
+  valid — it is simply no longer the highest-value next move.
+
+- Everything above the microbenchmark layer remains unmeasured: no index, no
+  query, no retrieval, so benchmark-plan.md §3–§5 still have no numbers.
+
+### What we learned
+
+1. **Check where a cost is actually paid before optimising it.** The queued
+   experiment would have vendored a 2.5 MB vocabulary asset and MIT-licensed
+   BPE code to cut a number that the primary integration path pays once per
+   process lifetime. Reading the architecture first replaced that with a
+   nine-line change that measured better on the path that actually pays it.
+
+2. **Some "slow components" are scheduling mistakes.** Nothing about loading a
+   vocabulary requires waiting for a subprocess to exit. The profile said
+   "construction costs 350 ms" and invited a faster constructor; the critical
+   path said "construction is on the wrong side of a blocking wait."
+
+3. **A bounded win should be stated with its bound.** This change saves
+   `min(child_duration, construction_time)` and nothing more. Reporting the
+   23% figure without the 5% fast-child case alongside it would be selecting
+   the flattering half of a two-case result.
+
+### Next highest-value experiment
+
+Leave token accounting alone. Counting is ~12.6 MiB/s parallel, construction is
+overlapped where it can be and architecturally once-per-process where it
+matters, and further work here has sharply diminishing returns — condition B of
+the stop policy.
+
+The next bottleneck is Phase 3, and the specific measurement that does not yet
+exist anywhere in this project:
+
+> Build the incremental symbol index, then measure warm exact symbol lookup
+> p50/p95 on small, medium and large repositories against the p50 <50 ms /
+> p95 <150 ms target — and measure the vanilla baseline (`grep`/`rg` over the
+> same repository for the same symbol) in the same harness, since a lookup
+> that is slower than ripgrep is not worth its index.
+
+Report scaling behaviour honestly if the target is not met at the largest size
+rather than quietly reporting only the small repository.
