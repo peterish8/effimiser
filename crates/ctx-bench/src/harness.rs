@@ -229,6 +229,108 @@ impl Runner {
         (cold, warm)
     }
 
+    /// Time two arms of an A/B comparison, **interleaved**.
+    ///
+    /// Added in iteration 3 after the sequential form produced a misleading
+    /// result. Measuring arm A to completion and then arm B makes the ratio
+    /// depend on anything that drifts during the run. It bit us concretely:
+    /// single-threaded 10 MiB token counting measured 1,668 ms on its first
+    /// execution and a *sustained* 3,457 ms across the ten that followed — a
+    /// 2x degradation with a tight p95/p50 of 1.1, so not a transient spike.
+    /// Whatever its cause, it landed entirely on the baseline arm and inflated
+    /// the apparent speedup of the treatment.
+    ///
+    /// Alternating A, B, A, B spreads any such drift across both arms instead
+    /// of concentrating it in whichever ran first. The arms are still reported
+    /// separately, and `notes` records that they were interleaved so the
+    /// numbers are not later compared against sequentially-measured ones.
+    #[allow(clippy::too_many_arguments)]
+    pub fn measure_interleaved<A: FnMut(), B: FnMut()>(
+        &mut self,
+        name_a: &str,
+        name_b: &str,
+        operation_a: &str,
+        operation_b: &str,
+        warmup: usize,
+        iters: usize,
+        input_bytes: Option<u64>,
+        mut a: A,
+        mut b: B,
+    ) -> (Measurement, Measurement) {
+        assert!(iters > 0, "iters must be positive");
+
+        let t = Instant::now();
+        a();
+        let cold_a = t.elapsed().as_nanos() as u64;
+        let t = Instant::now();
+        b();
+        let cold_b = t.elapsed().as_nanos() as u64;
+
+        for _ in 0..warmup {
+            a();
+            b();
+        }
+
+        let mut samples_a = Vec::with_capacity(iters);
+        let mut samples_b = Vec::with_capacity(iters);
+        for i in 0..iters {
+            // Swap which arm goes first on alternate rounds, so neither one
+            // systematically inherits the other's cache and allocator state.
+            if i % 2 == 0 {
+                let t = Instant::now();
+                a();
+                samples_a.push(t.elapsed().as_nanos() as u64);
+                let t = Instant::now();
+                b();
+                samples_b.push(t.elapsed().as_nanos() as u64);
+            } else {
+                let t = Instant::now();
+                b();
+                samples_b.push(t.elapsed().as_nanos() as u64);
+                let t = Instant::now();
+                a();
+                samples_a.push(t.elapsed().as_nanos() as u64);
+            }
+        }
+
+        let note = "interleaved A/B: arms alternate within one run, order swapped \
+                    each round; compare only against other interleaved results";
+
+        for (name, op, cold_ns, samples) in [
+            (name_a, operation_a, cold_a, samples_a),
+            (name_b, operation_b, cold_b, samples_b),
+        ] {
+            let cold = Measurement::new(
+                &format!("{name}.cold"),
+                op,
+                Thermal::Cold,
+                Stats::from_durations(vec![cold_ns]),
+                0,
+                input_bytes,
+                Some(format!("first execution in a fresh process; n=1. {note}")),
+                self.environment.clone(),
+            );
+            let warm = Measurement::new(
+                name,
+                op,
+                Thermal::Warm,
+                Stats::from_durations(samples),
+                warmup,
+                input_bytes,
+                Some(note.to_string()),
+                self.environment.clone(),
+            );
+            self.measurements.push(cold);
+            self.measurements.push(warm);
+        }
+
+        let n = self.measurements.len();
+        (
+            self.measurements[n - 3].clone(),
+            self.measurements[n - 1].clone(),
+        )
+    }
+
     /// Serialise every measurement as JSONL, one self-describing object per line.
     pub fn to_jsonl(&self) -> anyhow::Result<String> {
         let mut out = String::new();
