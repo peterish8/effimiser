@@ -50,9 +50,10 @@ compression does not happen.
 | `ctx-core` | working | handles, provenance, token accounting against a real BPE |
 | `ctx-store` | working | SQLite metadata + content-addressed blobs, run capture, file snapshots |
 | `ctx-cli` | working | `ctx init`, `ctx stats`, `ctx run`, `ctx output` |
+| `ctx-mcp` | working | resident MCP stdio server: `ctx_run`, `ctx_output`, `ctx_read_raw`, `ctx_snapshot`, `ctx_count_tokens`, `ctx_stats`, all with structured results |
 | `ctx-bench` | working | deterministic microbenchmarks with interleaved A/B arms |
 
-49 tests, all passing. Verified: captured output recovers byte-identically,
+77 tests, all passing (`cargo test --workspace`). Verified: captured output recovers byte-identically,
 handles survive process restarts, identical output from two runs stores one
 copy, and an unchanged file is detectable without re-reading it.
 
@@ -76,7 +77,12 @@ cargo build --release
 ./target/release/ctx init
 ./target/release/ctx run <your command>
 ./target/release/ctx output <the handle it printed> --grep error
+
+# or serve the same store to an agent host over MCP (stdio)
+./target/release/ctx-mcp --root .
 ```
+
+The MCP surface and its result shapes are documented in [docs/mcp.md](docs/mcp.md).
 
 Requires Rust 1.80+. No network, no API keys, no cloud services — by design.
 

@@ -1,0 +1,23 @@
+[package]
+name = "ctx-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ctx-mcp"
+path = "src/main.rs"
+
+[dependencies]
+ctx-core = { path = "../ctx-core" }
+ctx-store = { path = "../ctx-store" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.21"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

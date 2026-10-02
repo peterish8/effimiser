@@ -5,6 +5,7 @@ members = [
     "crates/ctx-store",
     "crates/ctx-index",
     "crates/ctx-cli",
+    "crates/ctx-mcp",
     "crates/ctx-bench",
 ]
 

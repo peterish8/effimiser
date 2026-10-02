@@ -268,6 +268,38 @@ impl Store {
         Ok((stdout, stderr))
     }
 
+    /// Content hashes of a run's `(stdout, stderr)` blobs, or `None` when the
+    /// handle names no recorded run.
+    pub fn run_hashes(&self, handle: &Handle) -> Result<Option<(String, String)>> {
+        let id = run_id(handle)?;
+        let row: Option<(Option<String>, Option<String>)> = self
+            .conn
+            .query_row(
+                "SELECT stdout_hash, stderr_hash FROM runs WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let empty = blobs::hash(b"");
+        Ok(row.map(|(so, se)| (so.unwrap_or_else(|| empty.clone()), se.unwrap_or(empty))))
+    }
+
+    /// Read a blob and prove it still matches its address. A blob whose bytes
+    /// no longer hash to its name is reported as an error, never returned.
+    pub fn get_blob_verified(&self, hash: &str) -> Result<Vec<u8>> {
+        anyhow::ensure!(
+            hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()),
+            "not a blake3 hex digest: {hash:?}"
+        );
+        let bytes = self.get_blob(hash)?;
+        let actual = blobs::hash(&bytes);
+        anyhow::ensure!(
+            actual == hash,
+            "blob {hash} is corrupt: its bytes hash to {actual}"
+        );
+        Ok(bytes)
+    }
+
     /// Record that the agent has been shown this exact content of `path`.
     pub fn record_snapshot(&self, path: &str, bytes: &[u8]) -> Result<String> {
         let hash = self.put_blob(bytes)?;
@@ -419,8 +451,12 @@ mod tests {
     #[test]
     fn repeat_run_with_identical_output_gets_a_distinct_handle() {
         let (_d, s) = store();
-        let h1 = s.put_run("npm test", "/r", Some(0), b"same", b"", 1).unwrap();
-        let h2 = s.put_run("npm test", "/r", Some(0), b"same", b"", 1).unwrap();
+        let h1 = s
+            .put_run("npm test", "/r", Some(0), b"same", b"", 1)
+            .unwrap();
+        let h2 = s
+            .put_run("npm test", "/r", Some(0), b"same", b"", 1)
+            .unwrap();
         assert_ne!(
             h1, h2,
             "two separate executions must be addressable separately"
@@ -459,6 +495,31 @@ mod tests {
         let bin: Vec<u8> = (0u8..=255).cycle().take(9000).collect();
         let h = s.put_run("dump", "/r", Some(0), &bin, b"", 1).unwrap();
         assert_eq!(s.run_output(&h).unwrap().0, bin);
+    }
+
+    #[test]
+    fn run_hashes_match_the_stored_blobs() {
+        let (_d, s) = store();
+        let h = s.put_run("x", "/r", Some(0), b"out", b"err", 1).unwrap();
+        let (so, se) = s.run_hashes(&h).unwrap().unwrap();
+        assert_eq!(s.get_blob_verified(&so).unwrap(), b"out");
+        assert_eq!(s.get_blob_verified(&se).unwrap(), b"err");
+        assert!(s.run_hashes(&Handle::output_run("nope")).unwrap().is_none());
+    }
+
+    #[test]
+    fn verified_read_rejects_a_tampered_blob() {
+        let (d, s) = store();
+        let hash = s.put_blob(b"original").unwrap();
+        let path = d
+            .path()
+            .join(".ctx/blobs")
+            .join(&hash[0..2])
+            .join(&hash[2..4])
+            .join(&hash);
+        std::fs::write(path, b"tampered").unwrap();
+        assert!(s.get_blob_verified(&hash).is_err());
+        assert!(s.get_blob_verified("../../etc/passwd").is_err());
     }
 
     #[test]

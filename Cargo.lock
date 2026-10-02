@@ -300,6 +300,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctx-mcp"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "base64",
+ "clap",
+ "ctx-core",
+ "ctx-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ctx-store"
 version = "0.0.1"
 dependencies = [
